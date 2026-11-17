@@ -1,0 +1,56 @@
+name: Archive Cardmarket Yu-Gi-Oh prices
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 12:17 in Hong Kong, after the usual European morning publication.
+    - cron: '17 4 * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cardmarket-price-archive
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out application code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Prepare separate archive branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive_branch=cardmarket-price-archive
+          archive_dir="$RUNNER_TEMP/cardmarket-archive"
+          git worktree add --detach "$archive_dir" HEAD
+          if git ls-remote --exit-code --heads origin "refs/heads/$archive_branch" > /dev/null; then
+            git fetch origin "refs/heads/$archive_branch:refs/remotes/origin/$archive_branch"
+            git -C "$archive_dir" switch -c "$archive_branch" "refs/remotes/origin/$archive_branch"
+          else
+            result=$?
+            if [ "$result" -ne 2 ]; then exit "$result"; fi
+            git -C "$archive_dir" switch --orphan "$archive_branch"
+            git -C "$archive_dir" rm -rf --ignore-unmatch .
+          fi
+      - name: Fetch and validate today's official guide
+        run: python3 scripts/archive_cardmarket_guide.py --archive-dir "$RUNNER_TEMP/cardmarket-archive" --require-today
+      - name: Commit new snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/cardmarket-archive"
+          git add price-guide-3
+          if git diff --cached --quiet; then
+            echo 'The source snapshot was already archived.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Archive Cardmarket Yu-Gi-Oh price guide'
+          git push origin HEAD:refs/heads/cardmarket-price-archive
