@@ -7,11 +7,16 @@ import hashlib
 import json
 import os
 import pathlib
+import sys
 import tempfile
 import urllib.request
 from zoneinfo import ZoneInfo
 
 from cardmarket_history import GUIDE_URL, ingest
+
+
+class GuideNotReadyError(ValueError):
+    """The source still serves a snapshot from a previous day."""
 
 
 def archive(data, directory, *, now=None, require_today=False):
@@ -21,8 +26,10 @@ def archive(data, directory, *, now=None, require_today=False):
     now = now or dt.datetime.now(dt.timezone.utc)
     source_day = dt.date.fromisoformat(day)
     today = now.astimezone(ZoneInfo('Europe/Berlin')).date()
-    if source_day > today or (require_today and source_day != today):
-        raise ValueError(f'Guide date {day} does not match current Cardmarket date {today}')
+    if source_day > today:
+        raise ValueError(f'Guide date {day} is after current Cardmarket date {today}')
+    if require_today and source_day < today:
+        raise GuideNotReadyError(f'Guide date {day} does not match current Cardmarket date {today}')
     doc = json.loads(data)
     digest = hashlib.sha256(data).hexdigest()
     destination = directory / 'price-guide-3' / f'{day}.json.gz'
@@ -59,7 +66,11 @@ def main():
         req = urllib.request.Request(GUIDE_URL, headers={'User-Agent': 'yugioh-cardmarket-history/1.0'})
         with urllib.request.urlopen(req, timeout=120) as response:
             data = response.read()
-    day, count, saved = archive(data, args.archive_dir, require_today=args.require_today)
+    try:
+        day, count, saved = archive(data, args.archive_dir, require_today=args.require_today)
+    except GuideNotReadyError as exc:
+        print(f'Not ready: {exc}', file=sys.stderr)
+        sys.exit(75)
     print(f'{day}: {count} products, {"saved" if saved else "already archived"}')
 
 

@@ -5,7 +5,7 @@ import pathlib
 import tempfile
 import unittest
 
-from archive_cardmarket_guide import archive
+from archive_cardmarket_guide import archive, GuideNotReadyError
 
 
 class ArchiveTests(unittest.TestCase):
@@ -29,7 +29,7 @@ class ArchiveTests(unittest.TestCase):
             directory = pathlib.Path(tmp)
             now = dt.datetime(2026, 11, 17, 12, tzinfo=dt.timezone.utc)
             raw = json.dumps({'createdAt': '2026-11-16T02:49:07+0100', 'priceGuides': [{'idProduct': 12, 'low': 1}]}).encode()
-            with self.assertRaises(ValueError):
+            with self.assertRaises(GuideNotReadyError):
                 archive(raw, directory, now=now, require_today=True)
             with self.assertRaises(ValueError):
                 archive(b'{"createdAt":"2026-11-17T02:00:00+0100","priceGuides":[]}', directory, now=now)

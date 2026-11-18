@@ -3,8 +3,8 @@ name: Archive Cardmarket Yu-Gi-Oh prices
 on:
   workflow_dispatch:
   schedule:
-    # 12:17 in Hong Kong, after the usual European morning publication.
-    - cron: '17 4 * * *'
+    # Retry throughout the day; GitHub may delay scheduled runs.
+    - cron: '17 1,4,7,10,13,16,19,22 * * *'
 
 permissions:
   contents: write
@@ -39,8 +39,20 @@ jobs:
             git -C "$archive_dir" rm -rf --ignore-unmatch .
           fi
       - name: Fetch and validate today's official guide
-        run: python3 scripts/archive_cardmarket_guide.py --archive-dir "$RUNNER_TEMP/cardmarket-archive" --require-today
+        id: fetch
+        shell: bash
+        run: |
+          if python3 scripts/archive_cardmarket_guide.py --archive-dir "$RUNNER_TEMP/cardmarket-archive" --require-today; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            result=$?
+            if [ "$result" -ne 75 ]; then exit "$result"; fi
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Today's Cardmarket guide is not published yet; the next scheduled run will retry."
+            echo "Today's Cardmarket guide is not published yet; the next scheduled run will retry." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Commit new snapshot
+        if: steps.fetch.outputs.ready == 'true'
         shell: bash
         run: |
           set -euo pipefail
